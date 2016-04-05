@@ -99,7 +99,9 @@ def fft(f_model,pxscale,lam,oifits=False,phot=False):
 	p1 = np.shape(img)[0]/2 - c_px
 	p2 = np.shape(img)[0]/2 + c_px
 	img_cut = img[p1:p2,p1:p2]
-	plt.imshow(img_cut/np.max(img_cut),origin="lower")
+	norm = np.median(img_cut) + 10*np.std(img_cut)
+#	norm = np.max(img_cut) ## leads to very shallow images if central point source is not removed
+	plt.imshow(img_cut/norm,origin="lower",vmin=0,vmax=1)
 	plt.colorbar(label="Normalized intensity")
 	plt.title("Image plane")
 	##
@@ -117,14 +119,24 @@ def fft(f_model,pxscale,lam,oifits=False,phot=False):
 	plt.imshow(vis,origin="lower")
 	plt.colorbar(label="Visibility amplitude")
 	plt.title("Fourier plane")
-	nax=5
-	xt = vis.shape[1] * np.arange(nax+1)/nax
-	yt = vis.shape[0] * np.arange(2*nax+1)/(2*nax)
-	plt.xticks(xt,-(fftscale*xt).astype(int))
-	plt.yticks(yt,(fftscale*(yt-roll)).astype(int))
+
+	max_bl=130
+	numpoints=3
+	
+	xt = np.arange(numpoints)/(numpoints-1) * max_bl
+	yt = (-1 + np.arange(2*numpoints-1)/(numpoints-1)) * max_bl
+	plt.xticks(xt/fftscale, (-xt).astype(int))
+	plt.yticks(roll+yt/fftscale, yt.astype(int))
+#	pdb.set_trace()
+	
+	
+#	nax=20
+#	xt = vis.shape[1] * np.arange(nax+1)/nax
+#	yt = vis.shape[0] * np.arange(2*nax+1)/(2*nax)
+#	plt.xticks(xt,-(fftscale*xt).astype(int))
+#	plt.yticks(yt,(fftscale*(yt-roll)).astype(int))
 	plt.xlabel("u [m]")
 	plt.ylabel("v [m]")
-	max_bl = 130
 	xylim=np.round(max_bl/fftscale)
 	plt.xlim([0,xylim])
 	plt.ylim([roll-xylim,roll+xylim])
@@ -132,71 +144,76 @@ def fft(f_model,pxscale,lam,oifits=False,phot=False):
 
 	plt.subplot(223)
 	r,V = azimuthalAverage(vis,center=[0,roll],returnradii=True)
-	plt.plot(fftscale * r,V)
+	plt.plot(fftscale * r,V, label="model")
 	plt.ylim([0,1])
 	plt.xlim([0,130])
 	plt.xlabel("Projected baseline [m]")
 	plt.ylabel("Visibility amplitude")
-	plt.title("Azimuthally averaged visibility amplitude")
+	plt.title("Azimuthally averaged visamp")
 	if oifits:
 		plt.plot(bl,vis_obs,'ks',label="MIDI data")
 		plt.legend(numpoints=1)
 
-
-	plt.subplot(224)
-#	plt.plot(fftscale * np.arange(vis.shape[1]),vis[roll,:])
-#	plt.ylim([0,1])
-#	plt.xlim([0,130])
-#	plt.xlabel("Projected baseline [m]")
-#	plt.ylabel("Visibility amplitude")
-#	plt.title("Meridional cut through (u,v) plane")
-	cNorm=c.Normalize(vmin=0,vmax=1.0)
-	scalarMap=cmx.ScalarMappable(norm=cNorm,cmap="rainbow")
-	for iu,iv,ivis in zip(u,v,vis_obs):
-		plt.plot(-iu,iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
-		plt.plot(iu,-iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
-	plt.xlim([-130,130])
-	plt.ylim([-130,130])
-	xyticks=np.array([-100,-50,0,50,100])
-	plt.xticks(xyticks,-xyticks)
-	plt.yticks(xyticks,xyticks)
-	plt.xlabel("u [m]")
-	plt.ylabel("v [m]")
-	plt.colorbar()
-	plt.title("Observed (u,v) plane")
+	if oifits:
+		plt.subplot(224)
+	#	plt.plot(fftscale * np.arange(vis.shape[1]),vis[roll,:])
+	#	plt.ylim([0,1])
+	#	plt.xlim([0,130])
+	#	plt.xlabel("Projected baseline [m]")
+	#	plt.ylabel("Visibility amplitude")
+	#	plt.title("Meridional cut through (u,v) plane")
+		cNorm=c.Normalize(vmin=0,vmax=1.0)
+		scalarMap=cmx.ScalarMappable(norm=cNorm,cmap="rainbow")
+		for iu,iv,ivis in zip(u,v,vis_obs):
+			plt.plot(-iu,iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
+			plt.plot(iu,-iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
+		plt.xlim([-130,130])
+		plt.ylim([-130,130])
+		xyticks=np.array([-100,-50,0,50,100])
+		plt.xticks(xyticks,-xyticks)
+		plt.yticks(xyticks,xyticks)
+		plt.xlabel("u [m]")
+		plt.ylabel("v [m]")
+		plt.colorbar(label="Visibility amplitude")
+		plt.title("Observed (u,v) plane")
 	
 
 
-	plt.suptitle(f_model.split(".fits")[0] + str(" (lam={0} m)".format(lam)))
 
 	plt.tight_layout()
+	plt.suptitle(f_model.split(".fits")[0] + str(" (lam={0} m)".format(lam)),fontsize=6)
 
 	plt.savefig(f_model.split(".fits")[0]+".png")
 	plt.clf()
 
 
 
-# pixel scale:
+##
+## pixel scales (mas per px)
 pxscale_1068 = 0.08 * 1000/71 ### 0.08 pc per px, 1000 mas = 71 pc in NGC 1068
+pxscale_1068_hr = 0.04 * 1000/71 ### 0.08 pc per px, 1000 mas = 71 pc in NGC 1068
 pxscale_circ = 0.08 * 1000/20 ### 0.08 pc per px, 1000 mas = 20 pc in Circinus
 pxscale_circ_hr = 0.04 * 1000/20 ### 0.04 pc per px, 1000 mas = 20 pc in Circinus / high-res images
 ##
 ## total flux references:
 ## NGC 1068: 10 Jy at 10.0 micron (Raban+ 2009)
 phot_1068_10mu = 10.0
+##
+## data references
+oifits1068="../MIDI_data/NGC1068_lopez-gonzaga2014.oifits"
+oifitscirc="../MIDI_data/Circinus_clean.oifits"
 
-#fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70.fits", pxscale_circ, 1e-5, oifits="../MIDI_data/Circinus_clean.oifits")
-#fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70_hr.fits", pxscale_circ_hr, 1e-5, oifits="../MIDI_data/Circinus_clean.oifits")
+#fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70.fits", pxscale_circ, 1e-5, oifits=oifitscirc)
+#fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70_hr.fits", pxscale_circ_hr, 1e-5, oifits=oifitscirc)
 
-models=["bild_n1068_1_30_70_055_hr.fits",
-	"bild_n1068_1_30_70_055.fits",
-	"bild_n1068_1_60_70_07_hr.fits",
-	"bild_n1068_1_60_70_07.fits",
-	"bild_n1068_1_60_70_11_hr.fits",
-	"bild_n1068_1_60_70_11.fits",
-	"bild_n1068_1_60_70_055_hr.fits",
-	"bild_n1068_1_60_70_055.fits"]
-for m in models:
-	fft("../models/Bernd_2016-03-14/"+m, pxscale_1068, 1e-5, oifits="../MIDI_data/NGC1068_lopez-gonzaga2014.oifits", phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_30_70_055_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_30_70_055.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_07_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_07.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_11_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_11.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_055_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_055.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
 
-#fft("../models/Bernd_2016-03-14/"+models[0], pxscale_1068, 1e-5, oifits="../MIDI_data/NGC1068_lopez-gonzaga2014.oifits", phot=phot_1068_10mu)
+
+#fft("../models/Schartmann_2009/data/maug_a00_60.fits", 1.14, 1.2e-5)
