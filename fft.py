@@ -10,14 +10,18 @@ from scipy.interpolate import RectBivariateSpline
 
 import pdb
 
-def read_midi_oifits(f,lam,dlam):
+def read_midi_oifits(f,lam,dlam,phot=False):
 	hdu=fits.open(f)
 	w=hdu[3].data
 	ww=w["EFF_WAVE"]
 	ix=(ww>lam-dlam)&(ww<lam+dlam)
 	
 	v=hdu[4].data
-	vv=v["VISAMP"]
+	if phot:
+		vv=v["CFLUX"]
+		vv/=phot
+	else:
+		vv=v["VISAMP"]
 	vis = np.average(vv[:,ix],axis=1)
 	u=v["UCOORD"]
 	v=v["VCOORD"]
@@ -38,12 +42,13 @@ def read_midi_oifits(f,lam,dlam):
 ##
 ## OPTIONAL PARAMETERS
 ##    oifits    path to OIFITS file containing visibilities for this object
+##    phot      if OIFITS file has a CFLUX field (assuming: [Jy]), compute visibility with this total flux [Jy]
 ##
-def fft(f_model,pxscale,lam,oifits=False):
+def fft(f_model,pxscale,lam,oifits=False,phot=False):
 	##
 	## print some info
 	print("Pixel scale: ", pxscale, " mas per pixel px")
-	print("Wavelength: ", lam, " m")
+	print("Wavelength: ", lam, " m")	
 	##
 	## set parameters
 	dlam=0.2e-6 ## half-width of wavelength box to extract visibilities from data
@@ -79,7 +84,11 @@ def fft(f_model,pxscale,lam,oifits=False):
 	##
 	## read observed data
 	if oifits:
-		bl,pa,u,v,vis_obs=read_midi_oifits(oifits,lam,dlam)
+		if phot:
+			bl,pa,u,v,vis_obs=read_midi_oifits(oifits,lam,dlam,phot=phot)
+		else:
+			bl,pa,u,v,vis_obs=read_midi_oifits(oifits,lam,dlam,phot=False)
+
 	##
 	## =============== make nice plot ===============
 	##
@@ -143,7 +152,6 @@ def fft(f_model,pxscale,lam,oifits=False):
 #	plt.title("Meridional cut through (u,v) plane")
 	cNorm=c.Normalize(vmin=0,vmax=1.0)
 	scalarMap=cmx.ScalarMappable(norm=cNorm,cmap="rainbow")
-#	pdb.set_trace()
 	for iu,iv,ivis in zip(u,v,vis_obs):
 		plt.plot(-iu,iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
 		plt.plot(iu,-iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
@@ -172,25 +180,23 @@ def fft(f_model,pxscale,lam,oifits=False):
 pxscale_1068 = 0.08 * 1000/71 ### 0.08 pc per px, 1000 mas = 71 pc in NGC 1068
 pxscale_circ = 0.08 * 1000/20 ### 0.08 pc per px, 1000 mas = 20 pc in Circinus
 pxscale_circ_hr = 0.04 * 1000/20 ### 0.04 pc per px, 1000 mas = 20 pc in Circinus / high-res images
+##
+## total flux references:
+## NGC 1068: 10 Jy at 10.0 micron (Raban+ 2009)
+phot_1068_10mu = 10.0
 
+#fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70.fits", pxscale_circ, 1e-5, oifits="../MIDI_data/Circinus_clean.oifits")
+#fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70_hr.fits", pxscale_circ_hr, 1e-5, oifits="../MIDI_data/Circinus_clean.oifits")
 
-fft("bild_circinus_1_65_70.fits", pxscale_circ, 1e-5, oifits="../img2vis/MIDI_data/Circinus_clean.oifits")
-fft("bild_circinus_1_65_70_hr.fits", pxscale_circ_hr, 1e-5, oifits="../img2vis/MIDI_data/Circinus_clean.oifits")
+models=["bild_n1068_1_30_70_055_hr.fits",
+	"bild_n1068_1_30_70_055.fits",
+	"bild_n1068_1_60_70_07_hr.fits",
+	"bild_n1068_1_60_70_07.fits",
+	"bild_n1068_1_60_70_11_hr.fits",
+	"bild_n1068_1_60_70_11.fits",
+	"bild_n1068_1_60_70_055_hr.fits",
+	"bild_n1068_1_60_70_055.fits"]
+for m in models:
+	fft("../models/Bernd_2016-03-14/"+m, pxscale_1068, 1e-5, oifits="../MIDI_data/NGC1068_lopez-gonzaga2014.oifits", phot=phot_1068_10mu)
 
-fft("circinus_bild_10_fo.fits", pxscale_circ, 1e-5, oifits="../img2vis/MIDI_data/Circinus_clean.oifits")
-fft("circinus_bild_10.fits", pxscale_circ, 1e-5, oifits="../img2vis/MIDI_data/Circinus_clean.oifits")
-
-
-###fft("bild_1068.fits",0.04 * 1000/71,1e-5,"../img2vis/MIDI_data/NGC1068.oifits") ## note: not yet proper OIFITS!
-
-#fft("bild_circinus_1_65_70_hr.fits","circinus")
-#fft("bild_circinus_1_65_70.fits","circinus")
-
-#fft("bild_n1068_1_30_70_055_hr.fits","ngc1068")
-#fft("bild_n1068_1_30_70_055.fits","ngc1068")
-#fft("bild_n1068_1_60_70_07_hr.fits","ngc1068")
-#fft("bild_n1068_1_60_70_07.fits","ngc1068")
-#fft("bild_n1068_1_60_70_11_hr.fits","ngc1068")
-#fft("bild_n1068_1_60_70_11.fits","ngc1068")
-#fft("bild_n1068_1_60_70_055_hr.fits","ngc1068")
-#fft("bild_n1068_1_60_70_055.fits","ngc1068")
+#fft("../models/Bernd_2016-03-14/"+models[0], pxscale_1068, 1e-5, oifits="../MIDI_data/NGC1068_lopez-gonzaga2014.oifits", phot=phot_1068_10mu)
