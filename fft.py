@@ -3,6 +3,7 @@ from astropy.modeling import models
 from matplotlib import pyplot as plt
 from matplotlib import colors as c
 import matplotlib.cm as cmx
+import glob
 
 from azimuthalAverage import azimuthalAverage
 from astropy.io import fits
@@ -206,14 +207,25 @@ oifitscirc="../MIDI_data/Circinus_clean.oifits"
 #fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70.fits", pxscale_circ, 1e-5, oifits=oifitscirc)
 #fft("../models/Bernd_2016-03-14/bild_circinus_1_65_70_hr.fits", pxscale_circ_hr, 1e-5, oifits=oifitscirc)
 
-fft("../models/Bernd_2016-03-14/bild_n1068_1_30_70_055_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
-fft("../models/Bernd_2016-03-14/bild_n1068_1_30_70_055.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
-fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_07_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
-fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_07.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
-fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_11_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
-fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_11.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
-fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_055_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
-fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_055.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_30_70_055_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_30_70_055.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_07_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_07.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_11_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_11.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_055_hr.fits", pxscale_1068_hr, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
+#fft("../models/Bernd_2016-03-14/bild_n1068_1_60_70_055.fits", pxscale_1068, 1e-5, oifits=oifits1068, phot=phot_1068_10mu)
 
 
+#fft("../models/Schartmann_2009/data/maug_000_00.fits", 1.14, 1.2e-5)
+#fft("../models/Schartmann_2009/data/maug_a00_30.fits", 1.14, 1.2e-5)
 #fft("../models/Schartmann_2009/data/maug_a00_60.fits", 1.14, 1.2e-5)
+#fft("../models/Schartmann_2009/data/maug_a00_90.fits", 1.14, 1.2e-5)
+#fft("../models/Schartmann_2009/data/maug_b00_08.fits", 1.14, 1.2e-5)
+
+models=glob.glob("../models/Schartmann_2008/data/*.fits")
+for m in models:
+	hdr = fits.getheader(m)
+	pixsize=1000*hdr["PIXSIZE"]
+	lam=hdr["LAMBDA1"]
+	fft(m,pixsize,lam)
