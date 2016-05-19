@@ -20,9 +20,9 @@ pas=[]
 chi2=[]
 
 for pa in np.arange(18)*10:
-	i=img2vis("../models/Bernd_2016-05-13/circinus_bild_10_25L0.111111.fits", pxscale_circ, 1e-5, oifits=oifitscirc, pa=-pa)
+	i=img2vis("../models/Bernd_2016-05-13/circinus_bild_10_25L0.111111.fits", pxscale_circ, 1e-5, oifits=oifitscirc, pa=pa)
 	chi2.append(i.vis_chi2())
-	pas.append(-pa)
+	pas.append(pa)
 
 pa_min_chi2=40
 i=img2vis("../models/Bernd_2016-05-13/circinus_bild_10_25L0.111111.fits", pxscale_circ, 1e-5, oifits=oifitscirc, pa=pa_min_chi2)
