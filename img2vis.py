@@ -94,16 +94,22 @@ class img2vis():
 						set to True when visualizing his models
 		pa			Position Angle (east of north / counter-clockwise on sky) that the input image will be rotated before transforming it
 		binary		if set to True, will add a binary to the image to test if the transform / plotting etc. works
+		delta_pa    half-range of PA to use for PA selection of observed visibilities,
+						i.e. data with PA +/- self.delta_pa will be chosen for data-model
+						comparisons
+
 	"""
 	
 	
-	def __init__(self,f_model,pxscale,lam,oifits=False,phot=False,nikutta=False,pa=0,binary=False):
+	def __init__(self, f_model, pxscale, lam, oifits=False, phot=False, nikutta=False, pa=0, binary=False, delta_pa=15):
 		self.f_model=f_model
 		self.pxscale=pxscale
 		self.lam=lam
 		self.oifits=oifits
 		self.nikutta=nikutta
 		self.pa_best=False
+		self.phot=phot
+		self.delta_pa=delta_pa		
 		##
 		## print some info
 		print("Pixel scale: ", pxscale, " mas per pixel px")
@@ -147,11 +153,8 @@ class img2vis():
 		##
 		## read observed data
 		if self.oifits:
-			if phot:
-				self.bl,self.pa,self.u,self.v,self.vis_obs,self.vis_obs_noise=read_midi_oifits(oifits,lam,dlam,phot=phot)
-			else:
-				self.bl,self.pa,self.u,self.v,self.vis_obs,self.vis_obs_noise=read_midi_oifits(oifits,lam,dlam,phot=False)
-
+			self.bl,self.pa,self.u,self.v,self.vis_obs,self.vis_obs_noise=read_midi_oifits(oifits,lam,dlam,phot=phot)
+		
 	def rotate_and_fft(self,pa,verbose=False):
 		## "rotate" rotates clockwise (careful: matplotlib.imshow uses origin="upper" per default)
 		##  PA is counter-clockwise on sky (see note above for coordinate systems)
@@ -197,11 +200,15 @@ class img2vis():
 #		vis = self.vis
 		
 		chi2=0
+				
 		for u,v,vis_obs,vis_obs_noise in zip(self.u,self.v,self.vis_obs,self.vis_obs_noise):
+			if vis_obs_noise == 0:
+				raise ValueError("vis_obs_noise must not be 0")
 			chi2 += (vis_obs - modelvis(u,v,self.vis,self.fftscale,self.roll))**2/vis_obs_noise**2
 		return chi2
 
 	def optimize_pa(self):
+	
 		self.pas=[]
 		self.chi2=[]
 
@@ -209,7 +216,7 @@ class img2vis():
 			##
 			## this could be made more efficient by only calling the sub-routine rotate_and_fft
 			## but then need to watch out for differential vs. absolute rotations
-			i=img2vis(self.f_model, self.pxscale, self.lam, oifits=self.oifits, pa=pa)
+			i=img2vis(self.f_model, self.pxscale, self.lam, oifits=self.oifits, pa=pa, phot=self.phot)
 			self.chi2.append(i.vis_chi2())
 			self.pas.append(pa)
 		
@@ -290,14 +297,22 @@ class img2vis():
 		num = r_m ## number of points to choose for interpolation
 		if not self.pa_best:
 			self.pa_best=0
+		
+		## pa1: perpendicular to pa_best
+		## pa2: parallel to pa_best
+		pa1 = 90 - self.pa_best
+		pa2 = 180 - self.pa_best
+		if self.pa_best > 90:
+			pa1 = 270 - self.pa_best
+			pa2 = 180 - self.pa_best
 
 		x0, y0 = 0, self.roll
-		x1, y1 = np.sin(np.pi/180 * (90 - self.pa_best)) * r_px, np.cos(np.pi/180 * (90 - self.pa_best)) * r_px + self.roll
+		x1, y1 = np.sin(np.pi/180 * (pa1)) * r_px, np.cos(np.pi/180 * (pa1)) * r_px + self.roll
 		x,y = np.linspace(x0,x1,num), np.linspace(y0,y1,num)
 		visi1 = map_coordinates(self.vis, np.vstack((y,x))) ## interpolated model visibilities
 		plt.plot([x0,x1],[y0,y1],'ro-')
 		
-		x1, y1 = np.sin(np.pi/180 * (180 - self.pa_best)) * r_px, np.cos(np.pi/180 * (180 - self.pa_best)) * r_px + self.roll
+		x1, y1 = np.sin(np.pi/180 * (pa2)) * r_px, np.cos(np.pi/180 * (pa2)) * r_px + self.roll
 		x,y = np.linspace(x0,x1,num), np.linspace(y0,y1,num)
 		visi2 = map_coordinates(self.vis, np.vstack((y,x))) ## interpolated model visibilities
 		plt.plot([x0,x1],[y0,y1],'go-')
@@ -323,15 +338,6 @@ class img2vis():
 		## =============== radial cuts along specific PA ===============
 		##
 		plt.subplot(224)
-		
-		
-		
-		
-#		pdb.set_trace()
-		
-		
-		
-		
 		plt.plot(np.arange(num), visi1, 'r',label="Model at PA = {0}".format(90+self.pa_best))
 		plt.plot(np.arange(num), visi2, 'g',label="Model at PA = {0}".format(self.pa_best))
 		plt.xlabel("Projected Baseline length [m]")
@@ -340,25 +346,33 @@ class img2vis():
 		if self.oifits:
 			##
 			## overplot data with similar PA range
-			pa_pos = self.pa ## create array with only positive PAs
-			pa_pos[pa_pos < 0] += 180
+			##
+			## first: move PAs into regime 0-180
+			pa = self.pa
+			pa[pa < 0] += 180
+			pa[pa > 180] -= 180
+			## and create complimentary pa's in range 180-360:
+			pa_180 = pa+180
+			##
+			## then: move pa_best (by construction within [0,180]) in regime 0-180
 			if self.pa_best < 0:
 				pa_best += 180
 			else:
 				pa_best = self.pa_best
+			
+			##
+			## pa_best and pa are now in range 0-180, but pa_best+90+self.delta_pa
+			##    could be > 180, so compare against both pa and pa_180 and then 
+			##    choose the combination of both
+			ix1 = (pa > (pa_best+90 - self.delta_pa)) & (pa < (pa_best+90 + self.delta_pa))
+			ix2 = (pa_180 > (pa_best+90 - self.delta_pa)) & (pa_180 < (pa_best+90 + self.delta_pa))
+			ix = np.any([ix1,ix2],axis=0)			
+			plt.plot(self.bl[ix],self.vis_obs[ix],'rx',label="MIDI, PA = {0} +/- {1}".format(self.pa_best+90,self.delta_pa))
 
-#			if pa_best+90 > 180:
-#				raise ValueError("Need to think again...")
-
-		
-			delta_pa = 15 ## half-range of PA to use for PA selection of observed 
-			##               visibilities (i.e. data with PA +/- delta_pa will be chosen)
-		
-			ix = (pa_pos > (pa_best+90 - delta_pa)) & (pa_pos < (pa_best+90 + delta_pa))
-			plt.plot(self.bl[ix],self.vis_obs[ix],'rx',label="MIDI, PA = {0} +/- {1}".format(self.pa_best+90,delta_pa))
-
-			ix = (pa_pos > (pa_best - delta_pa)) & (pa_pos < (pa_best + delta_pa))
-			plt.plot(self.bl[ix],self.vis_obs[ix],'gx',label="MIDI, PA = {0} +/- {1}".format(self.pa_best,delta_pa))
+			ix1 = (pa > (pa_best - self.delta_pa)) & (pa < (pa_best + self.delta_pa))
+			ix2 = (pa_180 > (pa_best - self.delta_pa)) & (pa_180 < (pa_best + self.delta_pa))
+			ix = np.any([ix1,ix2],axis=0)				
+			plt.plot(self.bl[ix],self.vis_obs[ix],'gx',label="MIDI, PA = {0} +/- {1}".format(self.pa_best,self.delta_pa))
 
 		plt.legend(numpoints=1,fontsize=8)
 		
