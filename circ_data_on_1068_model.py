@@ -3,9 +3,9 @@ import glob
 import numpy as np
 import pdb
 
-models=glob.glob("../models/Bernd_2016-05-26/*.fits")
-
-phot_1068_10mu = 10.0
+##
+## all 10 mu models of 1068
+models=glob.glob("../models/Bernd_2016-05-17/circ_data_on_1068_model/*.fits")
 
 for m in models:
 	L_scale = np.float(m.split(".fits")[0].split("L")[1])
@@ -16,19 +16,8 @@ for m in models:
 	
 	if obj=="n1068":
 		mas_per_pc = 1000/71
-		delta_pa=25
-		if np.isclose(lam,1e-5):
-			## run 1068 model with Circinus data
-			oifits = "../MIDI_data/Circinus_clean.oifits"
-			#oifits="../MIDI_data/NGC1068_lopez-gonzaga2014.oifits"
-			#phot = phot_1068_10mu
-	elif obj=="circinus":
-		mas_per_pc = 1000/20
 		delta_pa=15
-		if np.isclose(lam,1e-5):
-			oifits = "../MIDI_data/Circinus_clean.oifits"
-	else:
-		raise ValueError("Object {0} not known".format(obj))
+		oifits = "../MIDI_data/Circinus_clean.oifits"
 	
 #	pdb.set_trace()
 	pxscale_pc = 0.04 * np.sqrt(L_scale)
