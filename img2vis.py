@@ -101,19 +101,20 @@ class img2vis():
 	"""
 	
 	
-	def __init__(self, f_model, pxscale, lam, oifits=False, phot=False, nikutta=False, pa=0, binary=False, delta_pa=15):
+	def __init__(self, f_model, pxscale, lam, oifits=False, phot=False, nikutta=False, pa=0, binary=False, delta_pa=15, pa_best=False):
 		self.f_model=f_model
 		self.pxscale=pxscale
 		self.lam=lam
 		self.oifits=oifits
 		self.nikutta=nikutta
-		self.pa_best=False
+		self.pa_best=pa_best
 		self.phot=phot
 		self.delta_pa=delta_pa		
+		self.f_plot=self.f_model.split(".fits")[0]+".png"
 		##
 		## print some info
-		print("Pixel scale: ", pxscale, " mas per pixel px")
-		print("Wavelength: ", lam, " m")
+		#print("Pixel scale: ", pxscale, " mas per pixel px")
+		#print("Wavelength: ", lam, " m")
 		##
 		## set parameters
 		dlam=0.2e-6 ## half-width of wavelength box to extract visibilities from data
@@ -126,7 +127,7 @@ class img2vis():
 		##	
 		if self.nikutta:
 			if pa != 0:
-				raise ValueError("Not sure if padding for Nikutta models work with rotation")
+				raise ValueError("Not sure if padding for Nikutta models works with rotation")
 			self.img = self.img[6,:,:]
 			##
 			## need to pad image with 0s to get enough higher Fourier frequencies
@@ -147,9 +148,21 @@ class img2vis():
 			self.img[250,250+binsep_px]+=100000
 
 		##
-		## perform the actual FFT
-		self.rotate_and_fft(pa,verbose=True)
+		## make sure image dimensions are odd (so that rolling works properly)
 		
+		##
+		## perform the actual FFT
+		self.rotate_and_fft(pa,verbose=False)
+		
+		##
+		## determine point source flux and point source fraction
+		#### 2016-07-22: makes routine crash for newer Bernd models -- "invalid value"
+		#r,V = azimuthalAverage(self.vis,center=[0,self.roll],returnradii=True,binsize=5)
+		#bl = self.fftscale*r
+		##
+		## point source for faint sources (~ 120 m baseline) corresponds to ~ 40m baseline in Circinus model
+		#self.f_p = np.average(V[(bl>110) & (bl<130)]) ## Circinus
+		#self.f_p = np.average(V[(bl>35) & (bl<45)]) ## faint sources (F_nu ~ 1/10 Circ -> r_in ~ 1/3 Circ)		
 		##
 		## read observed data
 		if self.oifits:
@@ -160,6 +173,16 @@ class img2vis():
 		##  PA is counter-clockwise on sky (see note above for coordinate systems)
 		self.img=rotate(self.img, -pa, reshape=True)
 
+		##
+		## ensure that image size is always odd in both dimensions
+		##    otherwise the first Fourier frequency is ill defined
+		## since I cannot simply pad the rotated image with zeros, without the 
+		##    risk of creating sharp borders, I crop it by 1 pixel in both axes
+		if self.img.shape[0] != self.img.shape[1]:
+			raise ValueError("aspect ratio != 1")		
+		if self.img.shape[0] % 2 != 1:
+			self.img = self.img[0:-1,0:-1]
+
 		gridsize=self.img.shape[0]
 
 		##
@@ -169,7 +192,7 @@ class img2vis():
 		fft_img=np.abs(np.fft.rfft2(self.img))
 		##
 		## determine norm for visibilities, roll axes so that values start at 0 freq.
-		self.roll=np.round(fft_img.shape[0]/2)
+		self.roll=np.floor(gridsize/2)
 		r=self.roll.astype("int")
 		vis_norm=fft_img[0,0]
 		self.vis=np.roll(fft_img,r,0)/vis_norm
@@ -177,6 +200,11 @@ class img2vis():
 		##
 		## pxscale -> fftscale
 		fftscale=np.diff(freq)[0] ## cycles / mas per pixel in FFT image
+#		print(fftscale)
+#		pdb.set_trace()
+
+
+
 		mas2rad=np.deg2rad(1/3600000) ## mas per rad
 		self.fftscale = fftscale/mas2rad * self.lam ## meters baseline per px in FFT image at given wavelength
 		if verbose:
@@ -192,7 +220,7 @@ class img2vis():
 	## scale: scale factor by which **image plane** is shrinked / enlarged
 	##
 #	def vis_chi2(self,pa,scale):
-	def vis_chi2(self):
+	def vis_chi2(self,plot=False):
 #		fft_pa_rad = np.deg2rad(pa+90)
 #		fft_scale = 1/scale
 #		## rotate and rescale FFT image according to pa, scale
@@ -200,29 +228,84 @@ class img2vis():
 #		vis = self.vis
 		
 		chi2=0
-				
+##		print(chi2)
+		self.residuals=[]
+		if plot:
+			fig = plt.figure()
+			ax = fig.add_subplot(111)
+		
 		for u,v,vis_obs,vis_obs_noise in zip(self.u,self.v,self.vis_obs,self.vis_obs_noise):
 			if vis_obs_noise == 0:
 				raise ValueError("vis_obs_noise must not be 0")
-			chi2 += (vis_obs - modelvis(u,v,self.vis,self.fftscale,self.roll))**2/vis_obs_noise**2
+			res = (vis_obs - modelvis(u,v,self.vis,self.fftscale,self.roll))/vis_obs_noise
+
+			chi2 += res**2
+			if plot:
+				self.residuals.append(res)
+#				print(u,v,res)
+				if res>0:
+					color="black"
+				elif res<0:
+					color="red"
+				else:
+					raise ValueError("residual = 0?")
+				##
+				## need to invert (u,v) to plot only right half of (u,v) plane
+				if u > 0:
+					v=-v
+				else:
+					u=-u
+				ax.plot(u,v,'o',ms=np.abs(res),mec=color,mew=2,mfc="white")
+		
+		if plot:
+			ax.set_xlim([0,100])
+			xt=50*np.arange(3)
+			ax.set_xticks(xt)
+			ax.set_xticklabels(-xt)
+			ax.set_ylim([-100,100])
+			ax.set_aspect('equal')
+			ax.set_xlabel("u [m]")
+			ax.set_ylabel("v [m]")
+			ax.plot([200,200],'o',ms=1,color="red",label="negative residual (1 sigma)")
+			ax.plot([200,200],'o',ms=1,color="blue",label="positive residual (1 sigma)")
+			ax.legend(numpoints=1,fontsize=8)
+			fig.tight_layout()
+
+			fig.savefig(self.f_model.split(".fits")[0]+"_residuals.png")
+#			pdb.set_trace()
+			print(self.f_model.split(".fits")[0],chi2)
 		return chi2
 
-	def optimize_pa(self):
-	
-		self.pas=[]
-		self.chi2=[]
+	def optimize_pa(self,fixed_pa=False,step=10,pa_init=0,pa_max=180):
+		self.fixed_pa_best=False
+		if fixed_pa:
+			self.fixed_pa_best=True
+			self.pa_best=fixed_pa
+		else:
+			self.pas=[]
+			self.chi2=[]
 
-		for pa in np.arange(18)*10:
+			pa=pa_init
+			while True:
+				##
+				## this could be made more efficient by only calling the sub-routine rotate_and_fft
+				## but then need to watch out for differential vs. absolute rotations
+				i=img2vis(self.f_model, self.pxscale, self.lam, oifits=self.oifits, pa=pa, phot=self.phot)
+
+				self.chi2.append(i.vis_chi2())
+				self.pas.append(pa)
+				pa+=step
+				if pa > pa_max:
+					break
+			
+			## chose global chi2 minimum here for the moment, and plot PA vs. chi2 
+			##    so that we see if global minimum is bad.
+			self.pa_best = self.pas[np.argmin(self.chi2)]
 			##
-			## this could be made more efficient by only calling the sub-routine rotate_and_fft
-			## but then need to watch out for differential vs. absolute rotations
-			i=img2vis(self.f_model, self.pxscale, self.lam, oifits=self.oifits, pa=pa, phot=self.phot)
-			self.chi2.append(i.vis_chi2())
-			self.pas.append(pa)
-		
-		## chose global chi2 minimum here for the moment, and plot PA vs. chi2 
-		##    so that we see if global minimum is bad.
-		self.pa_best = self.pas[np.argmin(self.chi2)]
+			## write out best chi**2 and name of model
+			with open("chi2_min.txt","a") as f:
+				txt="{0}: {1:5.2f}\n".format(self.f_model, self.chi2[np.argmin(self.chi2)])
+				f.write(txt)
 		self.rotate_and_fft(self.pa_best)
 
 	##
@@ -231,6 +314,11 @@ class img2vis():
 	## plot and save model, FFT, azimuthal average and observed data
 	##
 	def make_plot(self):
+		##
+		## =============== model residuals on (u,v) plane ===============
+		##
+		if self.oifits:
+			self.vis_chi2(plot=True)
 		##
 		## =============== model image ===============
 		##
@@ -324,12 +412,19 @@ class img2vis():
 		## =============== chi^2 values as a function of PA ===============
 		##
 		plt.subplot(223)
-		if self.oifits:	
+		if self.oifits and not self.fixed_pa_best:
 			plt.plot(self.pas,self.chi2)
 			plt.plot([self.pa_best,self.pa_best],plt.ylim(),'r')
 			plt.xlabel("Position Angle (East of North)")
 			plt.ylabel("chi square")
 			plt.title("Optimal rotation of model")
+			##
+			## scale y axis to useful values
+		#	pdb.set_trace()
+			ymin = np.min(self.chi2)
+			ymax = np.median(self.chi2) + 3*(np.median(self.chi2)-np.min(self.chi2))
+			#plt.ylim([ymin,ymax])
+#			plt.yscale("log")
 		else:
 			plt.plot(0,0)
 			plt.title("No data available")
@@ -373,10 +468,11 @@ class img2vis():
 			ix2 = (pa_180 > (pa_best - self.delta_pa)) & (pa_180 < (pa_best + self.delta_pa))
 			ix = np.any([ix1,ix2],axis=0)				
 			plt.plot(self.bl[ix],self.vis_obs[ix],'gx',label="MIDI, PA = {0} +/- {1}".format(self.pa_best,self.delta_pa))
+		else:
+			plt.title("No data available")
 
 		plt.legend(numpoints=1,fontsize=8)
-		
-		
+				
 		
 ### below: old sub-plots showing azimuthally averaged visibilities (plot 3) and observed visibilities on (u,v) plane (plot 4)
 # 		plt.subplot(223)
@@ -421,5 +517,5 @@ class img2vis():
 		plt.tight_layout()
 		plt.suptitle(self.f_model.split(".fits")[0] + str(" (lam={0} m)".format(self.lam)),fontsize=6)
 
-		plt.savefig(self.f_model.split(".fits")[0]+".png")
+		plt.savefig(self.f_plot)
 		plt.clf()
