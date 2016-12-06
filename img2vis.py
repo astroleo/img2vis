@@ -62,11 +62,12 @@ def read_midi_oifits(f,lam,dlam,phot=False):
 def modelvis(u,v,vis,fftscale,roll):
 	## round to nearest pixel position in image
 	u=-u
-	x=np.round(u/fftscale)
-	y=roll+np.round(v/fftscale)
+	x=np.round(u/fftscale).astype("int")
+	y=roll+np.round(v/fftscale).astype("int")
 	if u<0:
 		x=-x
 		y=-y
+	
 	return(vis[y,x]) ## Python arrays are y,x not x,y...
 
 
@@ -189,14 +190,16 @@ class img2vis():
 		## =============== compute FFT frequencies and scale ===============
 		##
 		fft_freq=np.fft.fftfreq(gridsize,self.pxscale)
-		fft_img=np.abs(np.fft.rfft2(self.img))
+		fft=np.fft.rfft2(self.img)
+		fft_img=np.abs(fft)
+		fft_phases=np.angle(fft,deg=True)
+		
 		##
 		## determine norm for visibilities, roll axes so that values start at 0 freq.
-		self.roll=np.floor(gridsize/2)
-		r=self.roll.astype("int")
+		self.roll=np.floor(gridsize/2).astype("int")
 		vis_norm=fft_img[0,0]
-		self.vis=np.roll(fft_img,r,0)/vis_norm
-		freq=np.roll(fft_freq,r,0)
+		self.vis=np.roll(fft_img,self.roll,0)/vis_norm
+		freq=np.roll(fft_freq,self.roll,0)
 		##
 		## pxscale -> fftscale
 		fftscale=np.diff(freq)[0] ## cycles / mas per pixel in FFT image
@@ -304,7 +307,7 @@ class img2vis():
 			##
 			## write out best chi**2 and name of model
 			with open("chi2_min.txt","a") as f:
-				txt="{0}: {1:5.2f}\n".format(self.f_model, self.chi2[np.argmin(self.chi2)])
+				txt="{0:06.0f} -- {1}\n".format(self.chi2[np.argmin(self.chi2)], self.f_model)
 				f.write(txt)
 		self.rotate_and_fft(self.pa_best)
 
@@ -328,8 +331,8 @@ class img2vis():
 		if self.nikutta:
 			c_mas = 45
 		c_px = c_mas/self.pxscale
-		p1 = np.shape(self.img)[0]/2 - c_px
-		p2 = np.shape(self.img)[0]/2 + c_px
+		p1 = np.round(np.shape(self.img)[0]/2 - c_px).astype("int")
+		p2 = np.round(np.shape(self.img)[0]/2 + c_px).astype("int")
 		img_cut = self.img[p1:p2,p1:p2]
 		if self.nikutta:
 			img_cut = self.img
@@ -471,6 +474,7 @@ class img2vis():
 		else:
 			plt.title("No data available")
 
+		plt.ylim([0,1])
 		plt.legend(numpoints=1,fontsize=8)
 				
 		
