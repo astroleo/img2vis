@@ -5,11 +5,12 @@ from matplotlib import colors as c
 import matplotlib.cm as cmx
 import glob
 
-from azimuthalAverage import azimuthalAverage
 from astropy.io import fits
 from scipy.interpolate import RectBivariateSpline
 from scipy.ndimage.interpolation import rotate
 from scipy.ndimage import map_coordinates
+
+from azimuthalAverage import azimuthalAverage ## third-party tool
 
 import pdb
 
@@ -156,14 +157,13 @@ class img2vis():
 		self.rotate_and_fft(pa,verbose=False)
 		
 		##
-		## determine point source flux and point source fraction
-		#### 2016-07-22: makes routine crash for newer Bernd models -- "invalid value"
-		#r,V = azimuthalAverage(self.vis,center=[0,self.roll],returnradii=True,binsize=5)
-		#bl = self.fftscale*r
-		##
-		## point source for faint sources (~ 120 m baseline) corresponds to ~ 40m baseline in Circinus model
-		#self.f_p = np.average(V[(bl>110) & (bl<130)]) ## Circinus
-		#self.f_p = np.average(V[(bl>35) & (bl<45)]) ## faint sources (F_nu ~ 1/10 Circ -> r_in ~ 1/3 Circ)		
+		## determine point source fraction
+		r,V = azimuthalAverage(self.vis,center=[0,self.roll],returnradii=True,binsize=5)
+		bl = r * self.fftscale
+		## take point source fraction as median between 100 and 130 m baseline
+		## This is not strictly the same as in Burtscher+2013, where we used a 
+		## Gauss + constant fit to the V(r) curve), but it should be close.
+		self.f_p = np.median(V[(bl>80)&(bl<130)])
 		##
 		## read observed data
 		if self.oifits:
@@ -203,11 +203,6 @@ class img2vis():
 		##
 		## pxscale -> fftscale
 		fftscale=np.diff(freq)[0] ## cycles / mas per pixel in FFT image
-#		print(fftscale)
-#		pdb.set_trace()
-
-
-
 		mas2rad=np.deg2rad(1/3600000) ## mas per rad
 		self.fftscale = fftscale/mas2rad * self.lam ## meters baseline per px in FFT image at given wavelength
 		if verbose:
@@ -217,21 +212,10 @@ class img2vis():
 	##
 	## METHOD vis_chi2
 	##
-	## rotate and scale model FFT image to get best match with observed visibilities
+	## compute chi**2 of data given (rotated, scaled) model and produce residual plot if respective keyword is set.
 	##
-	## pa: position angle (deg) by which **image plane** is rotated
-	## scale: scale factor by which **image plane** is shrinked / enlarged
-	##
-#	def vis_chi2(self,pa,scale):
 	def vis_chi2(self,plot=False):
-#		fft_pa_rad = np.deg2rad(pa+90)
-#		fft_scale = 1/scale
-#		## rotate and rescale FFT image according to pa, scale
-#		fftscale=self.fftscale*fft_scale
-#		vis = self.vis
-		
 		chi2=0
-##		print(chi2)
 		self.residuals=[]
 		if plot:
 			fig = plt.figure()
@@ -245,7 +229,6 @@ class img2vis():
 			chi2 += res**2
 			if plot:
 				self.residuals.append(res)
-#				print(u,v,res)
 				if res>0:
 					color="black"
 				elif res<0:
@@ -274,9 +257,8 @@ class img2vis():
 			ax.legend(numpoints=1,fontsize=8)
 			fig.tight_layout()
 
-			fig.savefig(self.f_model.split(".fits")[0]+"_residuals.png")
-#			pdb.set_trace()
-			print(self.f_model.split(".fits")[0],chi2)
+			f_plot_res = self.f_plot.split(".png")[0]+"_residuals.png"
+			fig.savefig(f_plot_res)
 		return chi2
 
 	def optimize_pa(self,fixed_pa=False,step=10,pa_init=0,pa_max=180):
@@ -307,7 +289,7 @@ class img2vis():
 			##
 			## write out best chi**2 and name of model
 			with open("chi2_min.txt","a") as f:
-				txt="{0:06.0f} -- {1}\n".format(self.chi2[np.argmin(self.chi2)], self.f_model)
+				txt="{0:06.0f} -- {1:5.3f} -- {2:5.2f} -- {3}\n".format(self.chi2[np.argmin(self.chi2)], self.pxscale, self.f_p, self.f_model)
 				f.write(txt)
 		self.rotate_and_fft(self.pa_best)
 
@@ -336,7 +318,7 @@ class img2vis():
 		img_cut = self.img[p1:p2,p1:p2]
 		if self.nikutta:
 			img_cut = self.img
-		norm = np.median(img_cut) + 10*np.std(img_cut)
+		norm = np.median(img_cut) + 10 * np.std(img_cut)
 	#	norm = np.max(img_cut) ## leads to very shallow images if central point source is not removed
 		plt.imshow(img_cut/norm,origin="lower",vmin=0,vmax=1)
 		plt.colorbar(label="Normalized intensity")
@@ -352,7 +334,7 @@ class img2vis():
 		plt.ylabel("y [mas]")
 
 		##
-		## =============== model visibilities on (u,v) plane ===============
+		## =============== FFT of model -- visibilities on (u,v) plane ===============
 		##
 		plt.subplot(222)
 		plt.imshow(self.vis,origin="lower")
@@ -366,14 +348,7 @@ class img2vis():
 		yt = (-1 + np.arange(2*numpoints-1)/(numpoints-1)) * max_bl
 		plt.xticks(xt/self.fftscale, (-xt).astype(int))
 		plt.yticks(self.roll+yt/self.fftscale, yt.astype(int))
-	#	pdb.set_trace()
 	
-	
-	#	nax=20
-	#	xt = vis.shape[1] * np.arange(nax+1)/nax
-	#	yt = vis.shape[0] * np.arange(2*nax+1)/(2*nax)
-	#	plt.xticks(xt,-(fftscale*xt).astype(int))
-	#	plt.yticks(yt,(fftscale*(yt-self.roll)).astype(int))
 		plt.xlabel("u [m]")
 		plt.ylabel("v [m]")
 		xylim=np.round(max_bl/self.fftscale)
@@ -407,8 +382,6 @@ class img2vis():
 		x,y = np.linspace(x0,x1,num), np.linspace(y0,y1,num)
 		visi2 = map_coordinates(self.vis, np.vstack((y,x))) ## interpolated model visibilities
 		plt.plot([x0,x1],[y0,y1],'go-')
-		
-#		pdb.set_trace()
 
 
 		##
@@ -423,7 +396,6 @@ class img2vis():
 			plt.title("Optimal rotation of model")
 			##
 			## scale y axis to useful values
-		#	pdb.set_trace()
 			ymin = np.min(self.chi2)
 			ymax = np.median(self.chi2) + 3*(np.median(self.chi2)-np.min(self.chi2))
 			#plt.ylim([ymin,ymax])
@@ -476,47 +448,6 @@ class img2vis():
 
 		plt.ylim([0,1])
 		plt.legend(numpoints=1,fontsize=8)
-				
-		
-### below: old sub-plots showing azimuthally averaged visibilities (plot 3) and observed visibilities on (u,v) plane (plot 4)
-# 		plt.subplot(223)
-# 		if self.oifits:
-# 			plt.plot(self.bl,self.vis_obs,'ks',label="MIDI data")
-# 			plt.legend(numpoints=1)
-# 		if self.nikutta:
-# 			r,V = azimuthalAverage(self.vis,center=[0,self.roll],returnradii=True,binsize=2)
-# 		else:
-# 			r,V = azimuthalAverage(self.vis,center=[0,self.roll],returnradii=True)
-# 	#	pdb.set_trace()
-# 		plt.plot(self.fftscale * r,V, label="model")
-# 		plt.ylim([0,1])
-# 		plt.xlim([0,130])
-# 		plt.xlabel("Projected baseline [m]")
-# 		plt.ylabel("Visibility amplitude")
-# 		plt.title("Azimuthally averaged visamp")
-# 
-# 		if self.oifits:
-# 			plt.subplot(224)
-# 		#	plt.plot(fftscale * np.arange(vis.shape[1]),vis[roll,:])
-# 		#	plt.ylim([0,1])
-# 		#	plt.xlim([0,130])
-# 		#	plt.xlabel("Projected baseline [m]")
-# 		#	plt.ylabel("Visibility amplitude")
-# 		#	plt.title("Meridional cut through (u,v) plane")
-# 			cNorm=c.Normalize(vmin=0,vmax=1.0)
-# 			scalarMap=cmx.ScalarMappable(norm=cNorm,cmap="rainbow")
-# 			for iu,iv,ivis in zip(self.u,self.v,self.vis_obs):
-# 				plt.plot(-iu,iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
-# 				plt.plot(iu,-iv,color=scalarMap.to_rgba(ivis),mew=0,ms=4,marker="o")
-# 			plt.xlim([-130,130])
-# 			plt.ylim([-130,130])
-# 			xyticks=np.array([-100,-50,0,50,100])
-# 			plt.xticks(xyticks,-xyticks)
-# 			plt.yticks(xyticks,xyticks)
-# 			plt.xlabel("u [m]")
-# 			plt.ylabel("v [m]")
-# 			plt.colorbar(label="Visibility amplitude")
-# 			plt.title("Observed (u,v) plane")
 
 		plt.tight_layout()
 		plt.suptitle(self.f_model.split(".fits")[0] + str(" (lam={0} m)".format(self.lam)),fontsize=6)
